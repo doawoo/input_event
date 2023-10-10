@@ -29,7 +29,13 @@
 #ifdef DEBUG
 FILE *log_location;
 #define LOG_LOCATION log_location
-#define debug(...) do { fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\r\n"); fflush(stderr); } while(0)
+#define debug(...)                    \
+    do                                \
+    {                                 \
+        fprintf(stderr, __VA_ARGS__); \
+        fprintf(stderr, "\r\n");      \
+        fflush(stderr);               \
+    } while (0)
 #else
 #define LOG_LOCATION stderr
 #define debug(...)
@@ -50,7 +56,7 @@ static void send_report(void *buffer, size_t buffer_len, uint8_t report, uint8_t
 {
     uint8_t header[4];
     size_t len = buffer_len + sizeof(header) - 2;
-    header[0] = (uint8_t) (len >> 8);
+    header[0] = (uint8_t)(len >> 8);
     header[1] = (len & 0xff);
     header[2] = report;
     header[3] = sub;
@@ -72,7 +78,7 @@ static void process_events(int fd)
     if (rd < 0)
         err(EXIT_FAILURE, "read failed");
     if (rd % sizeof(struct input_event))
-        errx(EXIT_FAILURE, "read returned %d which is not a multiple of %d!", (int) rd, (int) sizeof(struct input_event));
+        errx(EXIT_FAILURE, "read returned %d which is not a multiple of %d!", (int)rd, (int)sizeof(struct input_event));
 
     // Package them for processing in Elixir.
     // The event timestamps have platform-dependent sizes (it's a timeval), so
@@ -81,7 +87,8 @@ static void process_events(int fd)
     size_t event_count = rd / sizeof(struct input_event);
 
     uint8_t *p = report_buffer;
-    for (size_t i = 0; i < event_count; i++) {
+    for (size_t i = 0; i < event_count; i++)
+    {
         memcpy(p, &input_buffer[i].type, 8);
         p += 8;
     }
@@ -90,11 +97,11 @@ static void process_events(int fd)
 }
 
 #define BITS_PER_LONG (sizeof(long) * 8)
-#define NBITS(x) ((((x)-1)/BITS_PER_LONG)+1)
-#define OFF(x)  ((x)%BITS_PER_LONG)
-#define BIT(x)  (1UL<<OFF(x))
-#define LONG(x) ((x)/BITS_PER_LONG)
-#define test_bit(bit, array)	((array[LONG(bit)] >> OFF(bit)) & 1)
+#define NBITS(x) ((((x)-1) / BITS_PER_LONG) + 1)
+#define OFF(x) ((x) % BITS_PER_LONG)
+#define BIT(x) (1UL << OFF(x))
+#define LONG(x) ((x) / BITS_PER_LONG)
+#define test_bit(bit, array) ((array[LONG(bit)] >> OFF(bit)) & 1)
 
 static void send_version(int fd)
 {
@@ -157,18 +164,31 @@ static void send_initial_keypresses(int fd)
         err(EXIT_FAILURE, "EVIOCGKEY");
 
     uint8_t *p = report_buffer;
-    for (uint16_t j = 0; j < KEY_MAX; j++) {
-        if (key_bitmask[j / 8] & (1 << (j % 8))) {
+    for (uint16_t j = 0; j < KEY_MAX; j++)
+    {
+        if (key_bitmask[j / 8] & (1 << (j % 8)))
+        {
             p = append_report(p, EV_KEY, j, 1); // key_pressed
         }
     }
 
-    if (p != report_buffer) {
+    if (p != report_buffer)
+    {
         // Terminate with a SYN
         p = append_report(p, EV_SYN, SYN_REPORT, 0);
 
         send_report(report_buffer, p - report_buffer, INPUT_EVENT_REPORT, 0);
     }
+}
+
+static void set_delay_period(int fd, int delay, int period)
+{
+    int settings[2];
+    settings[0] = delay;
+    settings[1] = period;
+
+    if (ioctl(fd, EVIOCSREP, &settings) < 0)
+        err(EXIT_FAILURE, "EVIOCSREP");
 }
 
 static void send_report_info(int fd)
@@ -182,16 +202,21 @@ static void send_report_info(int fd)
     if (ioctl(fd, EVIOCGBIT(0, EV_MAX), bit[0]) < 0)
         err(EXIT_FAILURE, "EVIOCGBIT");
 
-    for (uint16_t i = 1; i < EV_MAX; i++) {
-        if (test_bit(i, bit[0]) && i != EV_REP) {
+    for (uint16_t i = 1; i < EV_MAX; i++)
+    {
+        if (test_bit(i, bit[0]) && i != EV_REP)
+        {
             if (ioctl(fd, EVIOCGBIT(i, KEY_MAX), bit[i]) < 0)
                 continue;
 
             uint8_t *p = report_buffer;
-            for (uint16_t j = 0; j < KEY_MAX; j++) {
-                if (test_bit(j, bit[i])) {
+            for (uint16_t j = 0; j < KEY_MAX; j++)
+            {
+                if (test_bit(j, bit[i]))
+                {
                     p = append_uint16(p, j);
-                    if (i == EV_ABS) {
+                    if (i == EV_ABS)
+                    {
                         int abs[6];
                         if (ioctl(fd, EVIOCGABS(j), abs) < 0)
                             err(EXIT_FAILURE, "EVIOCGABS(%d)", j);
@@ -204,7 +229,8 @@ static void send_report_info(int fd)
         }
     }
 
-    if (test_bit(EV_REP, bit[0])) {
+    if (test_bit(EV_REP, bit[0]))
+    {
         unsigned int rep[REP_MAX + 1];
         if (ioctl(fd, EVIOCGREP, rep) < 0)
             err(EXIT_FAILURE, "EVIOCGREP");
@@ -221,6 +247,9 @@ int main(int argc, char *argv[])
 {
     if (argc < 2)
         errx(EXIT_FAILURE, "Pass the device to monitor");
+
+    if (argc > 3 && argc < 5)
+        errx(EXIT_FAILURE, "If you define repeat_delay, you must also define repeat_period");
 
     const char *input_path = argv[1];
     int fd = open(input_path, O_RDONLY);
@@ -239,7 +268,15 @@ int main(int argc, char *argv[])
     send_report(NULL, 0, INPUT_EVENT_READY, 0);
     send_initial_keypresses(fd);
 
-    for (;;) {
+    if (argc == 5)
+    {
+        int delay = atoi(argv[3]);
+        int period = atoi(argv[4]);
+        set_delay_period(fd, delay, period);
+    }
+
+    for (;;)
+    {
         struct pollfd fdset[2];
 
         fdset[0].fd = STDIN_FILENO;
